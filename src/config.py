@@ -1,6 +1,5 @@
 import os
 
-# Configuration for the AI Application Generator
 API_MODEL = "gpt-4o-mini"
 API_TEMPERATURE = 0.2
 MAX_TOKENS_DEFAULT = 4000
@@ -64,6 +63,14 @@ Based on the provided requirements specification document, you will:
 2. Create a logical file and directory structure appropriate for the chosen technologies
 3. Define component relationships and dependencies
 4. Establish data flow patterns between components
+
+IMPORTANT: For frameworks that handle both frontend and backend in a unified way, DO NOT separate them into distinct 'frontend' and 'backend' folders:
+- Flask: Use a templates/ directory for HTML and static/ for CSS/JS
+- Django: Use the standard Django project structure with templates/ and static/ folders
+- PHP: Keep PHP and HTML files together in appropriate directories
+- Laravel: Use the standard Laravel project structure with resources/views
+- Express.js with templating engines like EJS: Keep views together with routes
+- Any other framework that natively supports server-side rendering should follow its conventional project structure
 
 If "generate_tests" is true in the requirements, include test files in your architecture.
 If "create_docker" is true, include Dockerfile and docker-compose.yml in your architecture.
@@ -260,4 +267,29 @@ Don't add new features or change the application's behavior.
 Don't remove functionality unless it's the source of the error.
 
 Return ONLY the fixed file content, with no explanations or additional text.
+"""
+
+PROJECT_FILES_GENERATOR_PROMPT = """
+You are an expert in generating configuration and documentation files for software projects.
+Using the complete project structure, requirements, and provided architecture, 
+generate the requested file according to best practices.
+
+For requirements.txt:
+- Include ONLY Python dependencies (no JavaScript or frontend packages)
+- Use the correct syntax with appropriate versions
+- Organize dependencies in alphabetical order
+
+For package.json:
+- Create a complete npm configuration based on the project architecture
+- Include appropriate scripts according to the detected framework (React, Vue, etc.)
+- Properly define dependencies and devDependencies
+
+For README.md:
+- Create comprehensive documentation with detailed installation instructions
+- Explain how to configure and run the application according to its architecture
+- Document the project structure, its features, and dependencies
+- Adapt instructions based on whether the project uses Flask, Django, React, etc.
+- If Flask is used with templates, explain how the application is structured without a separate front-end
+
+Your response should contain only the content of the requested file, without explanations or comments.
 """

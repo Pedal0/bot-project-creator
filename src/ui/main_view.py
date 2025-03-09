@@ -3,6 +3,37 @@ from src.ui.reformulation import show_reformulation_section
 from src.ui.generation import show_generation_section, process_generation
 from src.ui.components import show_sidebar, show_header
 from src.utils.config import get_api_key
+import os
+
+
+def get_language_from_extension(file_path):
+    """Determine the appropriate language for syntax highlighting based on file extension"""
+    ext = os.path.splitext(file_path)[1].lower()
+    language_map = {
+        '.py': 'python',
+        '.js': 'javascript',
+        '.html': 'html',
+        '.css': 'css',
+        '.json': 'json',
+        '.md': 'markdown',
+        '.sql': 'sql',
+        '.sh': 'bash',
+        '.bat': 'bash',
+        '.yml': 'yaml',
+        '.yaml': 'yaml',
+        '.tsx': 'typescript',
+        '.ts': 'typescript',
+        '.jsx': 'javascript'
+    }
+    return language_map.get(ext, 'text')
+
+
+def is_binary_file(file_path):
+    """Check if a file is likely to be binary rather than text"""
+    binary_extensions = ['.jpg', '.jpeg', '.png', '.gif', '.ico', '.pdf', '.zip', '.tar',
+                         '.gz', '.exe', '.dll', '.so', '.pyc', '.ttf', '.woff']
+    ext = os.path.splitext(file_path)[1].lower()
+    return ext in binary_extensions
 
 
 def display_main_ui():

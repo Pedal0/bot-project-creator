@@ -25,6 +25,11 @@ class AppValidator:
         
         logger.info(f"Validating {language} application at {app_path}")
         
+        # Améliorer la détection des dépendances JavaScript
+        js_dependencies = self._detect_javascript_dependencies(app_path, project_context)
+        if js_dependencies and not os.path.exists(os.path.join(app_path, "package.json")):
+            self._create_package_json(app_path, js_dependencies)
+        
         env_setup_cmds, start_cmd = self._get_env_and_start_commands(app_path, language)
         
         if not self._setup_environment(app_path, env_setup_cmds):
@@ -38,15 +43,137 @@ class AppValidator:
             return True
             
         return self._attempt_fix_application(app_path, error_info, project_context)
+
+    def _detect_javascript_dependencies(self, app_path: str, project_context: Dict[str, Any]) -> List[str]:
+        """Detect JavaScript dependencies from project content"""
+        js_dependencies = []
+        
+        # Check for JavaScript libraries in requirements.txt
+        req_path = os.path.join(app_path, "requirements.txt")
+        if os.path.exists(req_path):
+            with open(req_path, 'r', encoding='utf-8', errors='replace') as f:
+                content = f.read().lower()
+                if 'chart.js' in content or 'chartjs' in content:
+                    js_dependencies.append("chart.js")
+                if 'react' in content:
+                    js_dependencies.append("react")
+                    js_dependencies.append("react-dom")
+                if 'vue' in content:
+                    js_dependencies.append("vue")
+                if 'angular' in content:
+                    js_dependencies.append("@angular/core")
+        
+        # Check for JavaScript libraries in code files
+        for root, dirs, files in os.walk(app_path):
+            for file in files:
+                if file.endswith(('.js', '.html', '.py')):
+                    try:
+                        with open(os.path.join(root, file), 'r', encoding='utf-8', errors='replace') as f:
+                            content = f.read().lower()
+                            if 'chart.js' in content or 'chartjs' in content:
+                                js_dependencies.append("chart.js")
+                            if 'import react' in content or 'from react' in content:
+                                js_dependencies.append("react")
+                                js_dependencies.append("react-dom")
+                            if 'import vue' in content or 'from vue' in content:
+                                js_dependencies.append("vue")
+                            if 'import { component }' in content and 'angular' in content:
+                                js_dependencies.append("@angular/core")
+                    except:
+                        pass
+        
+        # Remove duplicates
+        return list(set(js_dependencies))
+
+    def _create_package_json(self, app_path: str, dependencies: List[str]) -> None:
+        """Create a package.json file with the detected dependencies"""
+        logger.info(f"Creating package.json with dependencies: {dependencies}")
+        
+        package = {
+            "name": os.path.basename(app_path),
+            "version": "1.0.0",
+            "description": "Generated application",
+            "scripts": {
+                "start": "node index.js"
+            },
+            "dependencies": {}
+        }
+        
+        # Add detected dependencies
+        for dep in dependencies:
+            package["dependencies"][dep] = "latest"
+        
+        # Add additional dependencies based on what was detected
+        if "chart.js" in dependencies:
+            package["dependencies"]["chart.js"] = "^4.0.0"
+        
+        if "react" in dependencies:
+            package["dependencies"]["react-scripts"] = "5.0.1"
+            package["scripts"]["start"] = "react-scripts start"
+        
+        if "vue" in dependencies:
+            package["dependencies"]["vue-cli-service"] = "^5.0.0"
+            package["scripts"]["start"] = "vue-cli-service serve"
+        
+        # Write the package.json file
+        package_path = os.path.join(app_path, "package.json")
+        with open(package_path, 'w', encoding='utf-8') as f:
+            json.dump(package, f, indent=2)
+        
+        # Also update README with instructions
+        self._update_readme_with_js_dependencies(app_path, dependencies)
+
+    def _update_readme_with_js_dependencies(self, app_path: str, dependencies: List[str]) -> None:
+        """Update README.md with JavaScript dependencies installation instructions"""
+        readme_path = os.path.join(app_path, "README.md")
+        
+        if not os.path.exists(readme_path):
+            return
+        
+        try:
+            with open(readme_path, 'r', encoding='utf-8', errors='replace') as f:
+                content = f.read()
+                
+            # Check if there's a JavaScript section already
+            if "npm install" in content:
+                return
             
+            # Add a JavaScript dependencies section
+            js_section = "\n## JavaScript Dependencies\n\n"
+            js_section += "This application uses JavaScript libraries that need to be installed separately:\n\n"
+            js_section += "```bash\n"
+            js_section += "# Install JavaScript dependencies\n"
+            js_section += "npm install\n"
+            js_section += "```\n\n"
+            
+            if "chart.js" in dependencies:
+                js_section += "This will install Chart.js for data visualization.\n\n"
+            
+            # Find a good place to insert this section - after installation but before usage
+            if "## Usage" in content:
+                content = content.replace("## Usage", js_section + "## Usage")
+            elif "## Installation" in content:
+                content = content.replace("## Installation", "## Installation" + js_section)
+            else:
+                content += js_section
+            
+            with open(readme_path, 'w', encoding='utf-8') as f:
+                f.write(content)
+        
+        except Exception as e:
+            logger.error(f"Failed to update README with JS dependencies: {str(e)}")
+
     def _get_env_and_start_commands(self, app_path: str, language: str) -> Tuple[List[str], List[str]]:
         
         if language == "python":
             env_cmds = [
                 f"{'python -m venv' if sys.platform != 'win32' else 'python -m venv'} .venv",
-                f"{'source .venv/bin/activate' if sys.platform != 'win32' else '.venv\\Scripts\\activate'}",
-                "pip install -r requirements.txt"
+                f"{'source .venv/bin/activate' if sys.platform != 'win32' else '.venv\\Scripts\\activate'}"
             ]
+            
+            # Clean requirements.txt to remove JS dependencies before installing
+            if os.path.exists(os.path.join(app_path, "requirements.txt")):
+                env_cmds.append(self._create_clean_requirements_cmd(app_path))
             
             entry_point = self._find_python_entry_point(app_path)
             
@@ -94,6 +221,37 @@ class AppValidator:
             start_cmd = ["cmd", "/c", "echo", f"Validation not supported for {language}"]
             
         return env_cmds, start_cmd
+
+    def _create_clean_requirements_cmd(self, app_path: str) -> str:
+        """Clean requirements.txt of JavaScript dependencies and fix package casing"""
+        try:
+            req_path = os.path.join(app_path, "requirements.txt")
+            
+            with open(req_path, 'r', encoding='utf-8', errors='replace') as f:
+                requirements = []
+                for line in f:
+                    line = line.strip()
+                    # Skip markdown formatting artifacts, empty lines, comments, and JavaScript dependencies
+                    if (not line or line.startswith('#') or line.startswith('```') or 
+                        any(js_lib in line.lower() for js_lib in ['chart.js', 'react', 'vue', 'angular', '.js', 
+                                                                 'webpack', 'babel', 'jquery', 'npm', 'node'])):
+                        continue
+                    
+                    # Correct Flask casing
+                    if line.lower() == 'flask' or line.lower().startswith('flask=') or line.lower().startswith('flask=='):
+                        line = line.replace('Flask', 'flask')
+                    
+                    requirements.append(line)
+            
+            # Write back to the original requirements file
+            with open(req_path, 'w', encoding='utf-8') as f:
+                for req in requirements:
+                    f.write(f"{req}\n")
+                    
+            return f"pip install -r requirements.txt"
+        except Exception as e:
+            logger.error(f"Failed to clean requirements.txt: {str(e)}")
+            return "echo 'Failed to clean requirements.txt'"
 
     def _find_python_entry_point(self, app_path: str) -> Optional[str]:
         priority_files = [
